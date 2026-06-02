@@ -57,6 +57,90 @@ bash demo/demo_redact.sh demo/pii_examples.txt
 /usr/bin/python3 validators/phi4_mini_residency_check.py
 ```
 
+### Convert Aion from Edge Canary's ONNX bundle
+
+```bash
+# Use your local downloaded model bundle directory
+/usr/bin/python3 converters/aion3_onnx_to_ane.py \
+   --source-bundle PATH_TO_MODEL_BUNDLE \
+   --out-dir models/aion/ane \
+   --max-seq-len 2048
+```
+
+This script copies the tokenizer/config files from the Edge bundle, rebuilds the
+Qwen3-shaped model as a stateful CoreML package, and compiles the result for
+ANE-targeted execution.
+
+The output directory is local build state. The repository contains the converter
+and runtime, not Microsoft's downloaded model bundle, tokenizer, embedding
+binary, or compiled CoreML package.
+
+For fastest correctness validation while iterating, pass `--no-int8` to skip
+extra post-conversion quantization. The Edge bundle's ONNX weights are already
+block-quantized and dequantized by the converter.
+
+For runtime-oriented builds that do not need full logits on the host, add
+`--argmax-output`. This keeps the same model weights and quantization, but
+returns a scalar `next_token` from CoreML instead of the full vocab logits.
+
+Short-context packages are the most effective no-quantization speed lever because
+the current stateful graph attends over its compiled KV-cache length. Build them
+into separate directories so you can pick the latency/context tradeoff per use
+case:
+
+```bash
+/usr/bin/python3 converters/aion3_onnx_to_ane.py \
+   --source-bundle PATH_TO_MODEL_BUNDLE \
+   --out-dir models/aion/ane-256 \
+   --max-seq-len 256 \
+   --no-int8 \
+   --argmax-output
+```
+
+```bash
+# Validate Torch/CoreML parity for one token
+/usr/bin/python3 validators/aion_torch_coreml_parity.py --token-id 1 --max-seq-len 2048
+
+# Build the Swift host runtime
+swiftc -O runtime/aion3_ane.swift -framework CoreML -framework Foundation -o runtime/aion3_ane_runtime
+
+# Run a text prompt through the tokenizer and ANE runtime
+/usr/bin/python3 runtime/aion3_prompt.py "Hello, who are you?" --max-new 16 --warmup 1
+
+# Run against a short-context optimized package
+/usr/bin/python3 runtime/aion3_prompt.py "Hello, who are you?" \
+   --meta models/aion/ane-256/aion_runtime_meta.json \
+   --max-new 16 \
+   --warmup 1
+
+# Recording-friendly local proof demo with transparent runtime evidence
+./demo/aion_ane_demo.py --verbose --raw
+```
+
+The demo uses greedy argmax decoding plus a repeated n-gram stop. Keep the
+default short proof prompt for a reliable recording, or test custom prompts with
+`--delay 0 --verbose --raw` before capturing a polished take.
+
+To regenerate the local terminal GIF:
+
+```bash
+vhs demo/aion_ane_demo.tape
+```
+
+Current smoke test on the corrected stateful graph: Torch/CoreML argmax both
+select token `3575` with cosine `0.997848`; the Swift runtime generates coherent
+text at about `16 tok/s` decode for a short prompt on ANE.
+
+Measured no-quantization runtime tiers for the same short prompt, using argmax
+output and a 64-token decode smoke:
+
+| Package | Max context | Decode speed |
+|---------|-------------|--------------|
+| `models/aion/ane` | 2048 | ~15 tok/s |
+| `models/aion/ane-512` | 512 | ~21 tok/s |
+| `models/aion/ane-256` | 256 | ~22.4 tok/s |
+| `models/aion/ane-128` | 128 | ~22.8 tok/s |
+
 ---
 
 ## The Apple Neural Engine Inference Book
