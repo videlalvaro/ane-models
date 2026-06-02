@@ -26,6 +26,7 @@ By Alvaro Videla - [@old_sound](https://x.com/old_sound)
 | [08 - Swift Runtime](08-swift-runtime.html) | Cache-friendly CoreML orchestration, state, buffers, and serving |
 | [09 - Experiment Index](08-experiments.html) | Searchable index of experiment writeups |
 | [10 - Decision Journal](09-journal.html) | The thinking behind the hard calls |
+| [11 - ONNX Bundles to ANE](10-onnx-to-ane.html) | ONNX Runtime contrib ops, local weight materialization, CoreML rebuilds |
 | [Glossary](glossary.html) | Definitions for inference, CoreML, ANE, and validation terms |
 
 ## Repository

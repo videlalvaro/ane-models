@@ -32,6 +32,7 @@ When Pages is enabled for the repository, the rendered book is available at:
 | [08 - Swift Runtime](08-swift-runtime.md) | Cache-friendly CoreML orchestration, state, buffers, and serving |
 | [09 - Experiment Index](08-experiments.md) | Searchable index of experiment writeups |
 | [10 - Decision Journal](09-journal.md) | Design decisions and the reasoning behind them |
+| [11 - ONNX Bundles to ANE](10-onnx-to-ane.md) | ONNX Runtime contrib ops, local weight materialization, CoreML rebuilds |
 | [Glossary](glossary.md) | Definitions for inference, CoreML, ANE, and validation terms |
 
 ## What This Book Covers
@@ -44,6 +45,7 @@ When Pages is enabled for the repository, the rendered book is available at:
 - Cache-friendly Swift runtime design for warm decode and serving.
 - RangeDim and speculative decoding patterns for better throughput.
 - MoE-specific lessons from ZAYA and the Privacy Filter runtime.
+- ONNX bundle conversion through ONNX Runtime contrib ops and CoreML rebuilds.
 
 ## Evidence Standard
 
