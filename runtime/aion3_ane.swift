@@ -24,6 +24,8 @@ struct AionRuntimeMeta: Decodable {
     let eosTokenIds: [Int]
     let bosTokenId: Int?
     let embedBin: String
+    let ropeCosBin: String?
+    let ropeSinBin: String?
     let coremlCompiled: String
     let outputKind: String?
 
@@ -37,6 +39,8 @@ struct AionRuntimeMeta: Decodable {
         case eosTokenIds = "eos_token_ids"
         case bosTokenId = "bos_token_id"
         case embedBin = "embed_bin"
+        case ropeCosBin = "rope_cos_bin"
+        case ropeSinBin = "rope_sin_bin"
         case coremlCompiled = "coreml_compiled"
         case outputKind = "output_kind"
     }
@@ -112,15 +116,17 @@ func resolvePath(_ relative: String, relativeTo metaPath: String) -> String {
     return (base as NSString).appendingPathComponent(relative)
 }
 
-func fillRoPE(cosPtr: UnsafeMutablePointer<Float16>,
-              sinPtr: UnsafeMutablePointer<Float16>,
-              pos: Int, dHalf: Int, theta: Double) {
-    for j in 0..<dHalf {
-        let inv = 1.0 / pow(theta, Double(j) / Double(dHalf))
-        let angle = Double(pos) * inv
-        cosPtr[j] = Float16(cos(angle))
-        sinPtr[j] = Float16(sin(angle))
+func buildFallbackRoPETable(maxSeqLen: Int, ropeHalf: Int, theta: Double, useSin: Bool) -> [Float16] {
+    var table = [Float16](repeating: 0, count: maxSeqLen * ropeHalf)
+    for pos in 0..<maxSeqLen {
+        let base = pos * ropeHalf
+        for j in 0..<ropeHalf {
+            let inv = 1.0 / pow(theta, Double(j) / Double(ropeHalf))
+            let angle = Double(pos) * inv
+            table[base + j] = Float16(useSin ? sin(angle) : cos(angle))
+        }
     }
+    return table
 }
 
 func printStderr(_ message: String) {
@@ -131,6 +137,8 @@ func printStderr(_ message: String) {
 final class AionRuntime {
     let meta: AionRuntimeMeta
     let embed: FP16BinaryFile
+    let ropeCos: FP16BinaryFile?
+    let ropeSin: FP16BinaryFile?
     let model: MLModel
 
     let d: Int
@@ -150,16 +158,18 @@ final class AionRuntime {
     let attnMaskPtr: UnsafeMutablePointer<Float16>
     let kvWriteMaskPtr: UnsafeMutablePointer<Float16>
 
-    let ropeCosTable: [Float16]
-    let ropeSinTable: [Float16]
+    let fallbackRopeCosTable: [Float16]?
+    let fallbackRopeSinTable: [Float16]?
     let baseAttnMask: [Float16]
     let baseKvWriteMask: [Float16]
 
     let layerProvider: MLDictionaryFeatureProvider
 
-    init(meta: AionRuntimeMeta, embed: FP16BinaryFile, model: MLModel) throws {
+    init(meta: AionRuntimeMeta, embed: FP16BinaryFile, ropeCos: FP16BinaryFile?, ropeSin: FP16BinaryFile?, model: MLModel) throws {
         self.meta = meta
         self.embed = embed
+        self.ropeCos = ropeCos
+        self.ropeSin = ropeSin
         self.model = model
         d = meta.dModel
         vocab = meta.vocabSize
@@ -178,19 +188,13 @@ final class AionRuntime {
         attnMaskPtr = attnMaskArr.dataPointer.assumingMemoryBound(to: Float16.self)
         kvWriteMaskPtr = kvWriteMaskArr.dataPointer.assumingMemoryBound(to: Float16.self)
 
-        var ropeCos = [Float16](repeating: 0, count: maxSeqLen * ropeHalf)
-        var ropeSin = [Float16](repeating: 0, count: maxSeqLen * ropeHalf)
-        for pos in 0..<maxSeqLen {
-            let base = pos * ropeHalf
-            for j in 0..<ropeHalf {
-                let inv = 1.0 / pow(meta.ropeTheta, Double(j) / Double(ropeHalf))
-                let angle = Double(pos) * inv
-                ropeCos[base + j] = Float16(cos(angle))
-                ropeSin[base + j] = Float16(sin(angle))
-            }
+        if ropeCos == nil || ropeSin == nil {
+            fallbackRopeCosTable = buildFallbackRoPETable(maxSeqLen: maxSeqLen, ropeHalf: ropeHalf, theta: meta.ropeTheta, useSin: false)
+            fallbackRopeSinTable = buildFallbackRoPETable(maxSeqLen: maxSeqLen, ropeHalf: ropeHalf, theta: meta.ropeTheta, useSin: true)
+        } else {
+            fallbackRopeCosTable = nil
+            fallbackRopeSinTable = nil
         }
-        ropeCosTable = ropeCos
-        ropeSinTable = ropeSin
 
         baseAttnMask = [Float16](repeating: Float16(-65504), count: maxSeqLen)
         baseKvWriteMask = [Float16](repeating: 0, count: maxSeqLen)
@@ -274,12 +278,17 @@ final class AionRuntime {
                     needLogits: Bool = true) throws -> Int {
         embed.writeRow(tokenId, dim: d, into: xPtr)
         precondition(pos >= 0 && pos < maxSeqLen)
-        let base = pos * ropeHalf
-        _ = ropeCosTable.withUnsafeBufferPointer {
-            memcpy(cosPtr, $0.baseAddress! + base, ropeHalf * MemoryLayout<Float16>.size)
-        }
-        _ = ropeSinTable.withUnsafeBufferPointer {
-            memcpy(sinPtr, $0.baseAddress! + base, ropeHalf * MemoryLayout<Float16>.size)
+        if let ropeCos = ropeCos, let ropeSin = ropeSin {
+            ropeCos.writeRow(pos, dim: ropeHalf, into: cosPtr)
+            ropeSin.writeRow(pos, dim: ropeHalf, into: sinPtr)
+        } else {
+            let base = pos * ropeHalf
+            _ = fallbackRopeCosTable!.withUnsafeBufferPointer {
+                memcpy(cosPtr, $0.baseAddress! + base, ropeHalf * MemoryLayout<Float16>.size)
+            }
+            _ = fallbackRopeSinTable!.withUnsafeBufferPointer {
+                memcpy(sinPtr, $0.baseAddress! + base, ropeHalf * MemoryLayout<Float16>.size)
+            }
         }
 
         attnMaskPtr[cacheSeqLen] = 0
@@ -386,12 +395,16 @@ func main() throws {
     let embedPath = resolvePath(meta.embedBin, relativeTo: metaPath)
     let embed = try FP16BinaryFile(path: embedPath, expectedCount: meta.vocabSize * meta.dModel)
 
+    let ropeExpectedCount = meta.maxSeqLen * max(1, meta.ropeDim / 2)
+    let ropeCos = try meta.ropeCosBin.map { try FP16BinaryFile(path: resolvePath($0, relativeTo: metaPath), expectedCount: ropeExpectedCount) }
+    let ropeSin = try meta.ropeSinBin.map { try FP16BinaryFile(path: resolvePath($0, relativeTo: metaPath), expectedCount: ropeExpectedCount) }
+
     let cfg = MLModelConfiguration()
     cfg.computeUnits = .cpuAndNeuralEngine
     let modelPath = resolvePath(meta.coremlCompiled, relativeTo: metaPath)
     let model = try MLModel(contentsOf: URL(fileURLWithPath: modelPath), configuration: cfg)
 
-    let runtime = try AionRuntime(meta: meta, embed: embed, model: model)
+    let runtime = try AionRuntime(meta: meta, embed: embed, ropeCos: ropeCos, ropeSin: ropeSin, model: model)
 
     if warmupCalls > 0 {
         printStderr("Warming up \(warmupCalls) call(s)…")
