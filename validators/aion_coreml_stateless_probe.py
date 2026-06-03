@@ -8,7 +8,6 @@ single-token, no-past-cache path only.
 from __future__ import annotations
 
 import argparse
-import math
 import shutil
 import sys
 import tempfile
@@ -77,17 +76,6 @@ class StatelessToken0Model(torch.nn.Module):
         return self.lm_head(x).squeeze(-1).squeeze(-1)
 
 
-def fill_rope(pos: int, rope_half: int, theta: float) -> tuple[np.ndarray, np.ndarray]:
-    cos = np.empty((1, rope_half), dtype=np.float16)
-    sin = np.empty((1, rope_half), dtype=np.float16)
-    for j in range(rope_half):
-        inv = 1.0 / (theta ** (float(j) / float(rope_half)))
-        angle = float(pos) * inv
-        cos[0, j] = np.float16(math.cos(angle))
-        sin[0, j] = np.float16(math.sin(angle))
-    return cos, sin
-
-
 def cosine(a: np.ndarray, b: np.ndarray) -> float:
     an = np.linalg.norm(a)
     bn = np.linalg.norm(b)
@@ -112,7 +100,14 @@ def run(args: argparse.Namespace) -> int:
 
     token_id = int(args.token_id)
     x_np = emb[token_id].astype(np.float16).reshape(1, cfg.hidden_size, 1, 1)
-    cos_np, sin_np = fill_rope(0, cfg.rope_dim // 2, cfg.rope_theta)
+    cos_np = weights.get_any([
+        "model.layers.0.self_attn.cos_cached_export",
+        "layers.0.self_attn.cos_cached_export",
+    ])[:1].astype(np.float16)
+    sin_np = weights.get_any([
+        "model.layers.0.self_attn.sin_cached_export",
+        "layers.0.self_attn.sin_cached_export",
+    ])[:1].astype(np.float16)
 
     x = torch.from_numpy(x_np)
     rope_cos = torch.from_numpy(cos_np)

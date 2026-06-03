@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import math
 import sys
 from pathlib import Path
 
@@ -16,17 +15,6 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from converters.aion3_onnx_to_ane import OnnxWeightStore, StatefulDecoderModel, _latest_model_bundle, infer_config
-
-
-def fill_rope(pos: int, rope_half: int, theta: float) -> tuple[np.ndarray, np.ndarray]:
-    cos = np.empty((1, rope_half), dtype=np.float16)
-    sin = np.empty((1, rope_half), dtype=np.float16)
-    for j in range(rope_half):
-        inv = 1.0 / (theta ** (float(j) / float(rope_half)))
-        angle = float(pos) * inv
-        cos[0, j] = np.float16(math.cos(angle))
-        sin[0, j] = np.float16(math.sin(angle))
-    return cos, sin
 
 
 def cosine(a: np.ndarray, b: np.ndarray) -> float:
@@ -68,8 +56,14 @@ def run(args: argparse.Namespace) -> int:
     torch_model.half().eval()
 
     x = emb[token_id].astype(np.float16).reshape(1, cfg.hidden_size, 1, 1)
-    rope_half = cfg.rope_dim // 2
-    cos_np, sin_np = fill_rope(pos=0, rope_half=rope_half, theta=cfg.rope_theta)
+    cos_np = weights.get_any([
+        "model.layers.0.self_attn.cos_cached_export",
+        "layers.0.self_attn.cos_cached_export",
+    ])[:1].astype(np.float16)
+    sin_np = weights.get_any([
+        "model.layers.0.self_attn.sin_cached_export",
+        "layers.0.self_attn.sin_cached_export",
+    ])[:1].astype(np.float16)
 
     attn_mask = np.full((1, 1, 1, max_seq_len), np.float16(-1e4), dtype=np.float16)
     attn_mask[0, 0, 0, 0] = np.float16(0)

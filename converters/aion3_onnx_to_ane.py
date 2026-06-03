@@ -235,6 +235,25 @@ class OnnxWeightStore:
         emb.astype(np.float16).tofile(out_path)
         return int(emb.shape[0]), int(emb.shape[1])
 
+    def export_rope_bins(self, out_dir: Path, max_seq_len: int) -> tuple[str, str, tuple[int, int]]:
+        cos = self.get_any([
+            "model.layers.0.self_attn.cos_cached_export",
+            "layers.0.self_attn.cos_cached_export",
+        ])
+        sin = self.get_any([
+            "model.layers.0.self_attn.sin_cached_export",
+            "layers.0.self_attn.sin_cached_export",
+        ])
+        if cos.shape != sin.shape or cos.ndim != 2:
+            raise ValueError(f"unexpected RoPE cache shapes: cos={cos.shape}, sin={sin.shape}")
+        if cos.shape[0] < max_seq_len:
+            raise ValueError(f"RoPE cache length {cos.shape[0]} is shorter than max_seq_len={max_seq_len}")
+        cos_name = "aion_rope_cos.bin"
+        sin_name = "aion_rope_sin.bin"
+        cos[:max_seq_len].astype(np.float16).tofile(out_dir / cos_name)
+        sin[:max_seq_len].astype(np.float16).tofile(out_dir / sin_name)
+        return cos_name, sin_name, (int(max_seq_len), int(cos.shape[1]))
+
 
 def infer_config(bundle: Path) -> DecoderConfig:
     genai = _read_json(bundle / "genai_config.json")
@@ -370,7 +389,7 @@ class StatefulDecoderLayer:
                 self.hidden_size = w.shape[0]
 
             def forward(self, x):
-                norm_scale = 1.0 / 256.0
+                norm_scale = 1.0 / 16.0
                 x_scaled = x * norm_scale
                 x_f = x_scaled.float()
                 variance = (x_f * x_f).mean(dim=1, keepdim=True)
@@ -397,7 +416,7 @@ class StatefulDecoderLayer:
                 self.head_size = w.shape[0]
 
             def forward(self, x):
-                norm_scale = 1.0 / 256.0
+                norm_scale = 1.0 / 16.0
                 x_scaled = x * norm_scale
                 x_f = x_scaled.float()
                 variance = (x_f * x_f).mean(dim=-1, keepdim=True)
@@ -574,6 +593,7 @@ def _build_coreml_model(bundle: Path, out_dir: Path, max_seq_len: int, quantize_
     cfg = infer_config(bundle)
     weights = OnnxWeightStore(onnx_path)
     embed_shape = weights.export_embed_bin(out_dir / "aion_embed.bin")
+    weights.export_rope_bins(out_dir, max_seq_len)
     model = StatefulDecoderModel(weights, cfg, max_seq_len).module(output_kind=output_kind)
     model.half().eval()
 
@@ -642,6 +662,8 @@ def _build_coreml_model(bundle: Path, out_dir: Path, max_seq_len: int, quantize_
 
 def _write_runtime_metadata(bundle: Path, out_dir: Path, max_seq_len: int, embed_shape: tuple[int, int], mlmodelc: Path, output_kind: str) -> None:
     cfg = infer_config(bundle)
+    weights = OnnxWeightStore(bundle / "model.onnx")
+    rope_cos_bin, rope_sin_bin, rope_cache_shape = weights.export_rope_bins(out_dir, max_seq_len)
     manifest = _read_json(bundle / "manifest.json")
     vocab_from_embed, d_from_embed = embed_shape
     metadata = {
@@ -664,6 +686,9 @@ def _write_runtime_metadata(bundle: Path, out_dir: Path, max_seq_len: int, embed
         "tokenizer": "tokenizer.json",
         "tokenizer_config": "tokenizer_config.json",
         "embed_bin": "aion_embed.bin",
+        "rope_cos_bin": rope_cos_bin,
+        "rope_sin_bin": rope_sin_bin,
+        "rope_cache_shape": list(rope_cache_shape),
         "coreml_package": mlmodelc.with_suffix(".mlpackage").name,
         "coreml_compiled": mlmodelc.name,
         "output_kind": output_kind,
