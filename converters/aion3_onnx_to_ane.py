@@ -54,6 +54,45 @@ def _copy_if_exists(src: Path, dst_dir: Path) -> None:
         shutil.copy2(src, dst_dir / src.name)
 
 
+AION_ROLE_TOKENS = {
+    "system": "<|system|>",
+    "user": "<|user|>",
+    "assistant": "<|assistant|>",
+}
+AION_CHAT_END_TOKEN = "<|end|>"
+AION_CHAT_TEMPLATE_TYPE = "aion"
+
+
+def format_aion_chat_prompt(prompt: str, system_prompt: str | None = None) -> str:
+    parts: list[str] = []
+    if system_prompt:
+        parts.extend([AION_ROLE_TOKENS["system"], "\n", system_prompt, AION_CHAT_END_TOKEN, "\n"])
+    parts.extend([
+        AION_ROLE_TOKENS["user"],
+        "\n",
+        prompt,
+        AION_CHAT_END_TOKEN,
+        "\n",
+        AION_ROLE_TOKENS["assistant"],
+        "\n",
+    ])
+    return "".join(parts)
+
+
+def _copy_tokenizer_files(bundle: Path, out_dir: Path) -> None:
+    _copy_if_exists(bundle / "tokenizer.json", out_dir)
+    _copy_if_exists(bundle / "tokenizer_config.json", out_dir)
+    tokenizer_config_path = out_dir / "tokenizer_config.json"
+    if tokenizer_config_path.exists():
+        tokenizer_config = _read_json(tokenizer_config_path)
+    else:
+        tokenizer_config = {"tokenizer_file": "tokenizer.json"}
+    tokenizer_config["chat_template_type"] = AION_CHAT_TEMPLATE_TYPE
+    tokenizer_config["chat_role_tokens"] = AION_ROLE_TOKENS
+    tokenizer_config["chat_end_token"] = AION_CHAT_END_TOKEN
+    tokenizer_config_path.write_text(json.dumps(tokenizer_config, indent=2) + "\n", encoding="utf-8")
+
+
 def _to_f16(array: np.ndarray) -> np.ndarray:
     if array.dtype == np.float16:
         return array
@@ -685,6 +724,9 @@ def _write_runtime_metadata(bundle: Path, out_dir: Path, max_seq_len: int, embed
         "bos_token_id": cfg.bos_token_id,
         "tokenizer": "tokenizer.json",
         "tokenizer_config": "tokenizer_config.json",
+        "chat_template_type": AION_CHAT_TEMPLATE_TYPE,
+        "chat_role_tokens": AION_ROLE_TOKENS,
+        "chat_end_token": AION_CHAT_END_TOKEN,
         "embed_bin": "aion_embed.bin",
         "rope_cos_bin": rope_cos_bin,
         "rope_sin_bin": rope_sin_bin,
@@ -735,8 +777,7 @@ def main() -> int:
     print(f"Source bundle: {bundle}")
     print(f"Output dir:    {out_dir}")
 
-    _copy_if_exists(bundle / "tokenizer.json", out_dir)
-    _copy_if_exists(bundle / "tokenizer_config.json", out_dir)
+    _copy_tokenizer_files(bundle, out_dir)
     _copy_if_exists(bundle / "genai_config.json", out_dir)
     _copy_if_exists(bundle / "manifest.json", out_dir)
     _copy_if_exists(bundle / "edge_on_device_model_execution_config.pb", out_dir)

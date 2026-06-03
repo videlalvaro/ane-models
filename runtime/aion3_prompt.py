@@ -6,11 +6,15 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 from tokenizers import Tokenizer
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from converters.aion3_onnx_to_ane import format_aion_chat_prompt
 
 
 def run(args: argparse.Namespace) -> int:
@@ -21,7 +25,7 @@ def run(args: argparse.Namespace) -> int:
 
     prompt = args.prompt
     if args.chat:
-        prompt = f"<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n"
+        prompt = format_aion_chat_prompt(prompt, system_prompt=args.system_prompt)
 
     encoded = tokenizer.encode(prompt)
     prompt_ids = encoded.ids
@@ -57,7 +61,8 @@ def main() -> int:
     parser.add_argument("--runtime", type=Path, default=ROOT / "runtime" / "aion3_ane_runtime")
     parser.add_argument("--max-new", type=int, default=32)
     parser.add_argument("--warmup", type=int, default=0)
-    parser.add_argument("--chat", action="store_true")
+    parser.add_argument("--chat", action="store_true", help="Wrap the prompt with Aion's native chat template")
+    parser.add_argument("--system-prompt", help="Optional system message used with --chat")
     args = parser.parse_args()
     return run(args)
 
