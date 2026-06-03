@@ -13,6 +13,10 @@ from pathlib import Path
 from tokenizers import Tokenizer
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from converters.aion3_onnx_to_ane import format_aion_chat_prompt
+
 DEFAULT_PROMPTS = [
     "Hello, who are you?",
 ]
@@ -63,8 +67,9 @@ def load_tokenizer(meta_path: Path) -> tuple[dict, Tokenizer]:
     return meta, Tokenizer.from_file(str(tokenizer_path))
 
 
-def run_prompt(runtime: Path, meta_path: Path, tokenizer: Tokenizer, prompt: str, max_new: int, warmup: int, stop_repeat_ngram: int) -> dict:
-    prompt_ids = tokenizer.encode(prompt).ids
+def run_prompt(runtime: Path, meta_path: Path, tokenizer: Tokenizer, prompt: str, max_new: int, warmup: int, stop_repeat_ngram: int, raw_prompt: bool, system_prompt: str | None) -> dict:
+    model_prompt = prompt if raw_prompt else format_aion_chat_prompt(prompt, system_prompt=system_prompt)
+    prompt_ids = tokenizer.encode(model_prompt).ids
     if not prompt_ids:
         raise RuntimeError("tokenizer produced no prompt tokens")
 
@@ -92,6 +97,7 @@ def run_prompt(runtime: Path, meta_path: Path, tokenizer: Tokenizer, prompt: str
     payload = json.loads(raw_json)
     generated_ids = payload.get("generated_ids") or []
     payload["prompt_ids"] = prompt_ids
+    payload["model_prompt"] = model_prompt
     payload["text"] = tokenizer.decode(generated_ids).strip()
     payload["runtime_stderr"] = proc.stderr.strip()
     payload["runtime_cmd"] = cmd
@@ -117,6 +123,7 @@ def print_result(index: int, prompt: str, payload: dict, delay: float, verbose: 
     print(f"{DIM}user>{RESET} {prompt}")
     if verbose:
         print(f"{DIM}runtime>{RESET} {' '.join(payload.get('runtime_cmd', []))}")
+        print(f"{DIM}model_prompt>{RESET} {payload.get('model_prompt', '').replace(chr(10), '\\n')}")
         print(f"{DIM}prompt_ids>{RESET} {payload.get('prompt_ids', [])}")
     if delay > 0:
         time.sleep(delay)
@@ -147,6 +154,8 @@ def main() -> int:
     parser.add_argument("--force-build", action="store_true", help="Always rebuild the Swift runtime")
     parser.add_argument("--verbose", action="store_true", help="Show runtime command, prompt IDs, and generated IDs")
     parser.add_argument("--raw", action="store_true", help="Show raw JSON returned by the Swift runtime")
+    parser.add_argument("--raw-prompt", action="store_true", help="Tokenize prompts exactly as provided instead of applying Aion's chat template")
+    parser.add_argument("--system-prompt", help="Optional system message for Aion's chat template")
     args = parser.parse_args()
 
     meta_path = args.meta.resolve()
@@ -170,6 +179,8 @@ def main() -> int:
             args.max_new,
             args.warmup if index == 1 else 0,
             args.stop_repeat_ngram,
+            args.raw_prompt,
+            args.system_prompt,
         )
         print_result(index, prompt, payload, args.delay, args.verbose, args.raw)
 
