@@ -13,9 +13,9 @@ title: "Experiment 16 - Log-Sum-Exp Peephole Rewrite"
 The matmul accumulator currently does: `acc = ln(exp(acc) + exp(new_term))` — that's
 2 exps + 1 ln per accumulation step. The log-sum-exp identity rewrites this as:
 
-\[
+$$
 \ln(e^a + e^b) = \max(a,b) + \ln\left(1 + e^{-|a-b|}\right)
-\]
+$$
 
 This is 1 exp + 1 ln + 1 add — saving 1 transcendental per accumulation step.
 

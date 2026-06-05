@@ -71,9 +71,9 @@ Each MoE shard dispatch ≈ 10ms overhead, 40 shards × (4−1) eliminated dispa
 = 170ms/call saving well enough given model loading variability.
 
 **Break-even acceptance rate with 499 ms verifier vs 112 ms T=1:**
-\[
+$$
 p_{\text{break-even}} = 1 - \frac{t_1}{t_v/\text{vbt}} = 1 - \frac{112}{499/4} \approx 0.10
-\]
+$$
 
 At 11.5% observed acceptance rate, speculative is right at break-even in theory, but
 the T=4 verifier commit value is 1.115 tokens/call vs 1.0 for T=1, so the net effect is

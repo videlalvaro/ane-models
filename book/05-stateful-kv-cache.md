@@ -31,9 +31,9 @@ Without a stateful cache, every decode step must pass the entire KV prefix
 (all past keys and values) as CoreML inputs. At seq_len=512 with d_kv=128 and
 32 heads, that is:
 
-\[
+$$
 2 \times 32 \times 512 \times 128 = 4{,}194{,}304
-\]
+$$
 
 floats per layer, per step.
 
@@ -323,13 +323,13 @@ grown. Set `max_seq_len` conservatively — 4096 is a good default for most mode
 
 For a 32-layer model with `n_kv_heads=8`, `d_head=128`, `max_seq_len=4096`:
 
-\[
+$$
 \begin{aligned}
 	ext{KV cache memory}
 &= 32 \times 2 \times 8 \times 4096 \times 128 \times 2\ \text{bytes} \\
 &\approx 4\ \text{GB}
 \end{aligned}
-\]
+$$
 
 On M4 Max (48 GB unified memory) this is fine. On 16 GB machines, reduce
 `max_seq_len` or use fewer layers per state bundle.

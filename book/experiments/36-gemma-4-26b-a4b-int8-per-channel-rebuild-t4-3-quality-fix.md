@@ -25,9 +25,9 @@ dominant weights in Gemma 4's MoE FFN are the stacked expert matrices:
 - `down` stacked shape: `(45056, 704)` → 31.7 M elements → quantized (above threshold)
 
 Per-tensor quantization assigns ONE global scale to the entire 31.7 M element matrix:
-\[
+$$
 	ext{scale} = \frac{\max(|W|)}{127}
-\]
+$$
 
 If any element is an outlier at 5× the typical magnitude,
 the scale is 5× too large for the remaining weights, losing ~7 bits of effective precision
@@ -49,16 +49,16 @@ through \(N\) transformer layers is \(O((1 + \delta)^N)\), where \(\delta\) is t
 per-layer normalized error. With INT8 per-tensor giving \(\delta \approx 0.045\)
 at worst (cos=0.9555), after \(N = 30\) layers:
 
-\[
+$$
 (1 + 0.045)^{30} \approx 3.75\times
-\]
+$$
 
 relative error amplification. Per-channel targets \(\delta \le 0.003\) (cos ≥ 0.997
 per layer), giving:
 
-\[
+$$
 (1 + 0.003)^{30} \approx 1.09\times
-\]
+$$
 
 which is within the T4.3 logit gate.
 

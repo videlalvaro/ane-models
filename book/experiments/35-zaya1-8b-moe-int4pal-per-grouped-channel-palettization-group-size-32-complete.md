@@ -79,17 +79,17 @@ optimizations targeting the wrong resource leave performance on the table.
 
 **Break-even acceptance rate** with 483 ms verifier vs 109 ms T=1 (9.25 tok/s):
 
-\[
+$$
 p_{\text{break-even}} = 1 - \frac{t_1}{t_v/\text{vbt}} = 1 - \frac{109}{483/4} \approx 0.10
-\]
+$$
 
 At 7.3% observed acceptance (synthetic prompt), speculative is below break-even —
 matching the pattern from Exp 34. Real code-completion prompts at 60–80% acceptance
 would yield approximately:
 
-\[
+$$
 \frac{1 + 3 \times 0.7}{483\ \text{ms}} \approx 6.4\ \text{tok/s}
-\]
+$$
 
 which is still slower than the T=1 baseline at 9.25 tok/s because the verifier cost dominates.
 
