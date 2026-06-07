@@ -27,24 +27,24 @@ wall-clock time; MoE layers (40 shards, T=1 fixed) represent **~85%**.
 
 **Break-even equation** — need:
 
-\[
+$$
 \frac{1 + 3p}{475\ \text{ms}} > \frac{1}{130\ \text{ms}}
-\]
+$$
 
 which means:
 
-\[
+$$
 p > 0.883
-\]
+$$
 
 That is an **88.3% n-gram acceptance rate required for any speedup**.
 
 Measured at 1.8% acceptance on synthetic prompts.  Even with perfect acceptance
 (p=1.0, all 3 draft tokens accepted every call) speedup would only be:
 
-\[
+$$
 \frac{(1 + 3) \times 130\ \text{ms}}{475\ \text{ms}} = 1.09\times
-\]
+$$
 
 That is only a 9% improvement.
 

@@ -72,9 +72,9 @@ KV scatter overhead (same pattern validated in Exp 26 for Phi).
 KV cache scatter. With d_model=2048, n_kv_heads=2, d_head=128, seq_len=2048 the
 KV state per attention layer is:
 
-\[
+$$
 2 \times 2048 \times 128 \times 2\ \text{bytes} = 1\ \text{MB}
-\]
+$$
 
 Across 40 layers, that is \(40\ \text{MB}\) total, which is well within ANE DRAM
 budget. The RangeDim T=1..4 pattern from Exp 28 applies directly:

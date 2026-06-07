@@ -12,19 +12,19 @@ title: "Experiment 17 - Fused APL-Style Inner Product"
 **Mathematical basis**:
 APL treats `A +.× B` (matmul) as a single fused operator. For EML:
 
-\[
+$$
 \operatorname{dot}(a,b) = \ln\left(\sum_j \exp\left(\ln(a_j) + \ln(b_j)\right)\right)
-\]
+$$
 
 Using the log-sum-exp trick with a running max:
 
-\[
+$$
 m = \max_j\left(\ln(a_j) + \ln(b_j)\right)
-\]
+$$
 
-\[
+$$
 \operatorname{dot}(a,b) = m + \ln\left(\sum_j \exp\left(\ln(a_j) + \ln(b_j) - m\right)\right)
-\]
+$$
 
 This is K exps + 1 ln for the whole dot product instead of K exps + K lns 
 for element-wise accumulation. Cuts lns by factor of K (896).
